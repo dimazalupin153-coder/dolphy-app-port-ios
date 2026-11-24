@@ -1,0 +1,19 @@
+﻿name: DolphyCam
+options:
+  bundleIdPrefix: com.anon
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  DolphyCam:
+    type: application
+    platform: iOS
+    sources:
+      - DolphyCam
+    settings:
+      base:
+        INFOPLIST_FILE: DolphyCam/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.anon.dolphycam
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: NO
+    dependencies:
+      - sdk: ExternalAccessory.framework

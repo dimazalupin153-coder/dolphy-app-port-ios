@@ -1,5 +1,4 @@
 ﻿import SwiftUI
-import UIKit
 
 struct ContentView: View {
     @StateObject var net = NetworkTool()
@@ -8,6 +7,7 @@ struct ContentView: View {
     @StateObject var ble = BLEScan()
     @StateObject var chat = Chat()
     @StateObject var ir = IRTool()
+    @StateObject var settings = AppSettings()
 
     @State private var subnet = "192.168.1"
     @State private var targetIP = "192.168.1.1"
@@ -25,6 +25,8 @@ struct ContentView: View {
                 .tabItem { Label("Radio", systemImage: "antenna.radiowaves.left.and.right") }
             IRView(ir: ir)
                 .tabItem { Label("IR", systemImage: "av.remote") }
+            SettingsView(settings: settings, net: net)
+                .tabItem { Label("Настройки", systemImage: "gear") }
         }
         .preferredColorScheme(.dark)
     }
@@ -37,34 +39,41 @@ struct CamerasView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 HStack {
-                    TextField("subnet", text: $subnet)
-                        .textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
+                    TextField("subnet (192.168.1)", text: $subnet)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .keyboardType(.numbersAndPunctuation)
+                        .font(.system(.body, design: .monospaced))
                     Button("Scan") { net.startCameraScan(subnet: subnet) }.disabled(net.isScanning)
                 }.padding(.horizontal)
-                Text("creds: \(net.loadedCreds)").font(.caption2)
+
                 if let img = player.image {
-                    VStack(spacing: 2) {
+                    VStack {
                         Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 200).cornerRadius(8)
                         Text(player.status).font(.caption2).foregroundColor(.secondary)
                         Button("Stop") { player.stop() }.controlSize(.small)
                     }.padding(.horizontal)
                 }
+
                 if net.progress > 0 { ProgressView(value: net.progress).padding(.horizontal) }
+
                 List(net.hits) { h in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("\(h.ip)").font(.system(.footnote, design: .monospaced))
-                        Text("\(h.user):\(h.pass)").font(.caption2).foregroundColor(.secondary)
+                        HStack {
+                            Text("\(h.ip):\(h.proto)").font(.system(.footnote, design: .monospaced))
+                            Spacer()
+                            Text("\(h.user):\(h.pass)").font(.caption2).foregroundColor(.green)
+                        }
                         HStack(spacing: 6) {
                             Button("View") { player.start(ip: h.ip, user: h.user, pass: h.pass, rtsp: h.rtspURL) }
                                 .buttonStyle(.borderedProminent).controlSize(.small)
-                            Button("Copy RTSP") { UIPasteboard.general.string = h.rtspURL }
+                            Button("Copy") { UIPasteboard.general.string = h.rtspURL }
                                 .buttonStyle(.bordered).controlSize(.small)
                         }
                     }
                 }
-            }.navigationTitle("DolphyCam")
+            }.navigationTitle("Cameras").onAppear { net.clear() }
         }
     }
 }
@@ -81,7 +90,7 @@ struct PortsView: View {
                 }.padding()
                 if net.progress > 0 { ProgressView(value: net.progress).padding(.horizontal) }
                 ScrollView { Text(net.logs).font(.system(.footnote, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading).padding() }
-            }.navigationTitle("Ports")
+            }.navigationTitle("Ports").onAppear { net.clear() }
         }
     }
 }
@@ -89,18 +98,28 @@ struct PortsView: View {
 struct WifiView: View {
     @ObservedObject var net: NetworkTool
     @Binding var gateway: String
+    @State private var mode = "HTTP"
     var body: some View {
         NavigationView {
             VStack {
-                Text("Router brute (HTTP Basic)").font(.caption).foregroundColor(.secondary)
-                Text("passwords: \(net.loadedWifi)").font(.caption2)
-                HStack {
-                    TextField("gateway", text: $gateway).textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
-                    Button("Brute") { net.startWifiBrute(gateway: gateway) }.disabled(net.isScanning)
-                }.padding()
-                if net.progress > 0 { ProgressView(value: net.progress).padding(.horizontal) }
-                ScrollView { Text(net.logs).font(.system(.footnote, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading).padding() }
-            }.navigationTitle("WiFi Brute")
+                Picker("Mode", selection: $mode) {
+                    Text("HTTP Basic").tag("HTTP")
+                    Text("WPA (needs jailbreak)").tag("WPA").disabled(true)
+                }.pickerStyle(.segmented).padding()
+
+                if mode == "HTTP" {
+                    Text("Router brute (HTTP Basic)").font(.caption).foregroundColor(.secondary)
+                    Text("passwords: \(net.loadedWifi)").font(.caption2)
+                    HStack {
+                        TextField("gateway", text: $gateway).textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
+                        Button("Brute") { net.startWifiBrute(gateway: gateway) }.disabled(net.isScanning)
+                    }.padding()
+                    if net.progress > 0 { ProgressView(value: net.progress).padding(.horizontal) }
+                    ScrollView { Text(net.logs).font(.system(.footnote, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading).padding() }
+                } else {
+                    Text("WPA/WPA2 handshake brute is not supported by iOS hardware. Root or external adapter is required.").font(.caption).padding()
+                }
+            }.navigationTitle("WiFi Brute").onAppear { net.clear() }
         }
     }
 }
@@ -118,7 +137,7 @@ struct NFCRadioView: View {
                     Button("Scan NFC Tag") { nfc.start() }
                     Text(nfc.logs).font(.system(.caption2, design: .monospaced))
                 }
-                Section("BLE") {
+                Section("BLE Scan") {
                     if !ble.on { Text("Bluetooth off").foregroundColor(.red) }
                     ForEach(ble.devices.indices, id: \.self) { i in
                         HStack {
@@ -128,7 +147,7 @@ struct NFCRadioView: View {
                         }
                     }
                 }
-                Section("Chat (\(chat.peers))") {
+                Section("Chat (\(chat.peers) peers)") {
                     ForEach(chat.messages, id: \.self) { m in
                         Text(m).font(.system(.caption2, design: .monospaced))
                     }
@@ -212,6 +231,48 @@ struct IRCommandsView: View {
                     Button("Close") { }
                 }
             }
+        }
+    }
+}
+
+// --- Настройки ---
+final class AppSettings: ObservableObject {
+    @AppStorage("theme") var theme = "dark"
+    @AppStorage("fontScale") var fontScale = 1.0
+    @AppStorage("confirmIr") var confirmIr = true
+}
+
+struct SettingsView: View {
+    @ObservedObject var settings: AppSettings
+    @ObservedObject var net: NetworkTool
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Внешний вид") {
+                    Picker("Тема", selection: $settings.theme) {
+                        Text("Тёмная").tag("dark")
+                        Text("Светлая").tag("light")
+                    }
+                    Slider(value: $settings.fontScale, in: 0.8...1.5) {
+                        Text("Размер шрифта")
+                    }
+                }
+                Section("Безопасность") {
+                    Toggle("Подтверждать IR-команды", isOn: $settings.confirmIr)
+                }
+                Section("Словари") {
+                    Text("Паролей для камер: \(net.loadedCreds)").font(.caption)
+                    Text("Паролей для WiFi: \(net.loadedWifi)").font(.caption)
+                    Button("Обновить словари") {
+                        net.reloadWordlists()
+                    }
+                }
+                Section("О приложении") {
+                    Text("DolphyCam iOS — порт Dolphy-App").font(.caption)
+                    Text("Версия 0.9").font(.caption2).foregroundColor(.secondary)
+                }
+            }.navigationTitle("Настройки")
         }
     }
 }

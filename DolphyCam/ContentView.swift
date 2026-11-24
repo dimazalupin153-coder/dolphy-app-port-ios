@@ -2,7 +2,7 @@
 
 struct ContentView: View {
     @StateObject var net = NetworkTool()
-    @StateObject var vlc = VLCBox()
+    @StateObject var player = SnapshotPlayer()
     @StateObject var nfc = NFCTool()
     @StateObject var ble = BLEScan()
     @StateObject var chat = Chat()
@@ -14,7 +14,7 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            CamerasView(net: net, vlc: vlc, subnet: $subnet)
+            CamerasView(net: net, player: player, subnet: $subnet)
                 .tabItem { Label("Камеры", systemImage: "camera") }
             PortsView(net: net, ip: $targetIP)
                 .tabItem { Label("Порты", systemImage: "network") }
@@ -31,9 +31,8 @@ struct ContentView: View {
 
 struct CamerasView: View {
     @ObservedObject var net: NetworkTool
-    @ObservedObject var vlc: VLCBox
+    @ObservedObject var player: SnapshotPlayer
     @Binding var subnet: String
-    @State private var playURL: String = ""
 
     var body: some View {
         NavigationView {
@@ -44,18 +43,28 @@ struct CamerasView: View {
                     Button("Scan") { net.startCameraScan(subnet: subnet) }.disabled(net.isScanning)
                 }.padding(.horizontal)
                 Text("creds: \(net.loadedCreds)").font(.caption2)
-                if !playURL.isEmpty {
-                    VLCView(box: vlc, url: playURL).frame(height: 220).cornerRadius(8).padding(.horizontal)
-                } else if let img = net.lastSnapshot {
-                    Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 160).cornerRadius(8)
+
+                if let img = player.image {
+                    VStack(spacing: 2) {
+                        Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 220).cornerRadius(8)
+                        Text(player.status).font(.caption2).foregroundColor(.secondary)
+                        Button("Stop") { player.stop() }.controlSize(.small)
+                    }.padding(.horizontal)
                 }
+
                 if net.progress > 0 { ProgressView(value: net.progress).padding(.horizontal) }
+
                 List(net.hits) { h in
                     VStack(alignment: .leading, spacing: 4) {
                         Text("\(h.ip)").font(.system(.footnote, design: .monospaced))
                         Text("\(h.user):\(h.pass)").font(.caption2).foregroundColor(.secondary)
-                        Button("Play RTSP") { playURL = h.rtspURL }
-                            .buttonStyle(.borderedProminent).controlSize(.small)
+                        HStack(spacing: 6) {
+                            Button("View") {
+                                player.start(ip: h.ip, user: h.user, pass: h.pass, rtsp: h.rtspURL)
+                            }.buttonStyle(.borderedProminent).controlSize(.small)
+                            Button("RTSP URL") { UIPasteboard.general.string = h.rtspURL }
+                                .buttonStyle(.bordered).controlSize(.small)
+                        }
                     }
                 }
             }.navigationTitle("DolphyCam")
@@ -146,12 +155,11 @@ struct IRView: View {
                     Text("Адаптер подключён").font(.headline)
                     Text(ir.adapterName).font(.caption).foregroundColor(.secondary)
                     Text(ir.logs).font(.system(.caption2, design: .monospaced)).padding()
-                    Button("Send Test IR") { ir.sendCommand("0x20DF10EF") }
-                        .buttonStyle(.borderedProminent)
+                    Button("Send Test IR") { ir.sendCommand("0x20DF10EF") }.buttonStyle(.borderedProminent)
                 } else {
                     Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.orange)
                     Text("ИК-адаптер не найден").font(.headline)
-                    Text("Подключите MFi-сертифицированный ИК-донгл к Lightning / USB-C порту. Обычные адаптеры с AliExpress не определяются iOS.")
+                    Text("Подключите MFi-сертифицированный ИК-донгл. Обычные адаптеры iOS не видит.")
                         .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center).padding()
                     Text(ir.logs).font(.system(.caption2, design: .monospaced))
                 }

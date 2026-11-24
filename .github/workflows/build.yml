@@ -5,27 +5,28 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Install tools
-      run: brew install xcodegen cocoapods
-    - name: Prepare icon (resize to 1024)
-      run: |
-        sips -z 1024 1024 DolphyCam/AppIcon.png --out DolphyCam/AppIcon1024.png
-        mv DolphyCam/AppIcon1024.png DolphyCam/AppIcon.png
+    - name: Install xcodegen
+      run: brew install xcodegen
     - name: Generate Xcode project
       run: xcodegen generate
-    - name: Pod install
-      run: pod install
     - name: Build
       run: |
-        xcodebuild -workspace DolphyCam.xcworkspace -scheme DolphyCam \
+        set -o pipefail
+        xcodebuild -project DolphyCam.xcodeproj -scheme DolphyCam \
           -sdk iphoneos -configuration Release \
-          -derivedDataPath build CODE_SIGNING_ALLOWED=NO
+          -derivedDataPath build CODE_SIGNING_ALLOWED=NO 2>&1 | tee build.log
+    - name: Upload build log on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
     - name: Package IPA
       run: |
         mkdir Payload
         cp -r build/Build/Products/Release-iphoneos/DolphyCam.app Payload/
         zip -r DolphyCam.ipa Payload
-    - name: Upload
+    - name: Upload IPA
       uses: actions/upload-artifact@v4
       with:
         name: DolphyCam-ipa

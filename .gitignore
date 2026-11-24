@@ -1,0 +1,4 @@
+﻿dolphy-src/
+build/
+*.ipa
+Payload/

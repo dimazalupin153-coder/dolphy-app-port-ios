@@ -1,7 +1,8 @@
 ﻿import Foundation
 import ExternalAccessory
+import Combine
 
-final class IRTool: ObservableObject {
+final class IRTool: NSObject, ObservableObject {
     @Published var adapterConnected = false
     @Published var adapterName = ""
     @Published var logs = ""

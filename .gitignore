@@ -3,3 +3,5 @@ build/
 *.ipa
 Payload/
 DolphyCam/Assets/
+DolphyCam/Assets.zip
+*.log

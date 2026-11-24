@@ -23,8 +23,9 @@ final class NFCTool: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate {
         for msg in messages {
             for rec in msg.records {
                 let payload = String(data: rec.payload, encoding: .utf8) ?? "<binary>"
-                log("[+] \(rec.typeName): \(payload)")
+                let tname = String(data: rec.type, encoding: .utf8) ?? "unknown"; log("[+] \(tname): \(payload)")
             }
         }
     }
 }
+

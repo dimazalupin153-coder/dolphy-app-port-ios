@@ -8,7 +8,9 @@ targets:
     type: application
     platform: iOS
     sources:
-      - DolphyCam
+      - path: DolphyCam
+    resources:
+      - path: DolphyCam/Assets
     settings:
       base:
         INFOPLIST_FILE: DolphyCam/Info.plist

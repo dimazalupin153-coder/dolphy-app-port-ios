@@ -1,4 +1,5 @@
 ﻿import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @StateObject var net = NetworkTool()
@@ -43,26 +44,22 @@ struct CamerasView: View {
                     Button("Scan") { net.startCameraScan(subnet: subnet) }.disabled(net.isScanning)
                 }.padding(.horizontal)
                 Text("creds: \(net.loadedCreds)").font(.caption2)
-
                 if let img = player.image {
                     VStack(spacing: 2) {
-                        Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 220).cornerRadius(8)
+                        Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 200).cornerRadius(8)
                         Text(player.status).font(.caption2).foregroundColor(.secondary)
                         Button("Stop") { player.stop() }.controlSize(.small)
                     }.padding(.horizontal)
                 }
-
                 if net.progress > 0 { ProgressView(value: net.progress).padding(.horizontal) }
-
                 List(net.hits) { h in
                     VStack(alignment: .leading, spacing: 4) {
                         Text("\(h.ip)").font(.system(.footnote, design: .monospaced))
                         Text("\(h.user):\(h.pass)").font(.caption2).foregroundColor(.secondary)
                         HStack(spacing: 6) {
-                            Button("View") {
-                                player.start(ip: h.ip, user: h.user, pass: h.pass, rtsp: h.rtspURL)
-                            }.buttonStyle(.borderedProminent).controlSize(.small)
-                            Button("RTSP URL") { UIPasteboard.general.string = h.rtspURL }
+                            Button("View") { player.start(ip: h.ip, user: h.user, pass: h.pass, rtsp: h.rtspURL) }
+                                .buttonStyle(.borderedProminent).controlSize(.small)
+                            Button("Copy RTSP") { UIPasteboard.general.string = h.rtspURL }
                                 .buttonStyle(.bordered).controlSize(.small)
                         }
                     }
@@ -121,7 +118,7 @@ struct NFCRadioView: View {
                     Button("Scan NFC Tag") { nfc.start() }
                     Text(nfc.logs).font(.system(.caption2, design: .monospaced))
                 }
-                Section("BLE Scan") {
+                Section("BLE") {
                     if !ble.on { Text("Bluetooth off").foregroundColor(.red) }
                     ForEach(ble.devices.indices, id: \.self) { i in
                         HStack {
@@ -131,7 +128,7 @@ struct NFCRadioView: View {
                         }
                     }
                 }
-                Section("Chat (\(chat.peers) peers)") {
+                Section("Chat (\(chat.peers))") {
                     ForEach(chat.messages, id: \.self) { m in
                         Text(m).font(.system(.caption2, design: .monospaced))
                     }
@@ -147,23 +144,74 @@ struct NFCRadioView: View {
 
 struct IRView: View {
     @ObservedObject var ir: IRTool
+    @State private var search = ""
+    @State private var selectedCategory = "all"
+    @State private var expanded: IRRemote?
+
+    var filtered: [IRRemote] {
+        var list = ir.db.remotes
+        if selectedCategory != "all" { list = list.filter { $0.category == selectedCategory } }
+        if !search.isEmpty {
+            list = list.filter { $0.name.lowercased().contains(search.lowercased()) || $0.brand.lowercased().contains(search.lowercased()) }
+        }
+        return Array(list.prefix(500))
+    }
+
     var body: some View {
         NavigationView {
-            VStack(spacing: 16) {
-                if ir.adapterConnected {
-                    Image(systemName: "checkmark.circle.fill").font(.largeTitle).foregroundColor(.green)
-                    Text("Адаптер подключён").font(.headline)
-                    Text(ir.adapterName).font(.caption).foregroundColor(.secondary)
-                    Text(ir.logs).font(.system(.caption2, design: .monospaced)).padding()
-                    Button("Send Test IR") { ir.sendCommand("0x20DF10EF") }.buttonStyle(.borderedProminent)
+            VStack(spacing: 0) {
+                HStack {
+                    TextField("search (Samsung, Sony...)", text: $search)
+                        .textFieldStyle(.roundedBorder)
+                    Picker("cat", selection: $selectedCategory) {
+                        Text("all").tag("all")
+                        ForEach(ir.db.categories.prefix(20), id: \.self) { c in Text(c).tag(c) }
+                    }.pickerStyle(.menu)
+                }.padding(.horizontal, 8)
+
+                if !ir.adapterConnected {
+                    Text("⚠ No IR adapter — database browsable, transmission needs MFi dongle")
+                        .font(.caption2).foregroundColor(.orange).padding(6)
                 } else {
-                    Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.orange)
-                    Text("ИК-адаптер не найден").font(.headline)
-                    Text("Подключите MFi-сертифицированный ИК-донгл. Обычные адаптеры iOS не видит.")
-                        .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center).padding()
-                    Text(ir.logs).font(.system(.caption2, design: .monospaced))
+                    Text("✓ Adapter: \(ir.adapterName)").font(.caption2).foregroundColor(.green).padding(6)
                 }
-            }.navigationTitle("IR").onAppear { ir.refresh() }
+
+                Text("\(ir.db.remotes.count) remotes · \(ir.db.brands.count) brands · \(ir.db.categories.count) categories")
+                    .font(.caption2).foregroundColor(.secondary)
+
+                List(filtered) { r in
+                    Button { expanded = r } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.name).font(.system(.footnote))
+                            Text("\(r.category) / \(r.brand)").font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }.navigationTitle("IR Database")
+            .sheet(item: $expanded) { r in
+                IRCommandsView(ir: ir, remote: r)
+            }
+        }
+    }
+}
+
+struct IRCommandsView: View {
+    @ObservedObject var ir: IRTool
+    let remote: IRRemote
+    @State private var cmds: [String] = []
+
+    var body: some View {
+        NavigationView {
+            List(cmds, id: \.self) { c in
+                Button(c) { ir.sendCommand(c) }
+            }
+            .navigationTitle(remote.name)
+            .onAppear { cmds = ir.db.commands(for: remote) }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { }
+                }
+            }
         }
     }
 }

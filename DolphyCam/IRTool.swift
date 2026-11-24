@@ -1,37 +1,35 @@
 ﻿import Foundation
 import ExternalAccessory
 
-final class IRTool: NSObject, ObservableObject {
+final class IRTool: ObservableObject {
     @Published var adapterConnected = false
     @Published var adapterName = ""
     @Published var logs = ""
+    @Published var db = IRDatabase()
 
     override init() {
         super.init()
-        NotificationCenter.default.addObserver(self, selector: #selector(accessoryChanged), name: .EAAccessoryDidConnect, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(accessoryChanged), name: .EAAccessoryDidDisconnect, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(accChanged), name: .EAAccessoryDidConnect, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(accChanged), name: .EAAccessoryDidDisconnect, object: nil)
         EAAccessoryManager.shared().registerForLocalNotifications()
         refresh()
     }
 
-    @objc func accessoryChanged() { refresh() }
+    @objc func accChanged() { refresh() }
 
     func refresh() {
-        let accessories = EAAccessoryManager.shared().connectedAccessories
-        // Ищем любой аксессуар, который может быть ИК-адаптером (по названию или протоколу)
-        if let ir = accessories.first(where: { $0.name.lowercased().contains("ir") || $0.protocolStrings.contains(where: { $0.lowercased().contains("ir") }) }) {
-            adapterConnected = true
-            adapterName = ir.name
+        let accs = EAAccessoryManager.shared().connectedAccessories
+        if let ir = accs.first(where: { $0.name.lowercased().contains("ir") }) {
+            adapterConnected = true; adapterName = ir.name
             logs = "Adapter: \(ir.name)\nProtocols: \(ir.protocolStrings.joined(separator: ", "))"
         } else {
-            adapterConnected = false
-            adapterName = ""
-            logs = accessories.isEmpty ? "No MFi accessories connected." : "Accessories found, but none look like an IR adapter."
+            adapterConnected = false; adapterName = ""
+            logs = accs.isEmpty ? "No MFi accessories" : "MFi accessories found, none is IR"
         }
     }
 
     func sendCommand(_ hex: String) {
-        guard adapterConnected else { logs = "No adapter."; return }
-        logs = "Sending \(hex) — requires vendor-specific protocol. Check adapter SDK."
+        guard adapterConnected else { logs = "No adapter"; return }
+        logs = "Would send \(hex) — vendor SDK required"
     }
 }

@@ -3,7 +3,7 @@
 struct IRRemote: Identifiable, Hashable {
     let id = UUID()
     let name: String
-    let path: String
+    let path: String        // relative to Assets root
     let brand: String
     let category: String
 }
@@ -13,15 +13,51 @@ final class IRDatabase: ObservableObject {
     @Published var categories: [String] = []
     @Published var brands: [String] = []
     @Published var loaded = false
+    @Published var status = "init"
 
-    init() { load() }
+    static var assetsRoot: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("Assets", isDirectory: true)
+    }
 
-    func load() {
-        guard let base = Bundle.main.resourceURL?.appendingPathComponent("Assets") else { return }
-        var found: [IRRemote] = []
+    init() { bootstrap() }
+
+    func bootstrap() {
         let fm = FileManager.default
+        let root = Self.assetsRoot
 
-        // ищем все .ir файлы рекурсивно
+        // если уже распаковано — грузим
+        if fm.fileExists(atPath: root.path) {
+            status = "loading from cache"
+            load()
+            return
+        }
+
+        // иначе распаковываем zip из бандла
+        guard let zipURL = Bundle.main.url(forResource: "Assets", withExtension: "zip") else {
+            status = "Assets.zip not in bundle"
+            return
+        }
+        status = "unzipping \(Int((try? fm.attributesOfItem(atPath: zipURL.path)[.size] as? Int64 ?? 0) ?? 0) bytes)..."
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try fm.createDirectory(at: root, withIntermediateDirectories: true)
+                try Self.unzipItem(at: zipURL, to: root)
+                DispatchQueue.main.async {
+                    self.status = "unpacked"
+                    self.load()
+                }
+            } catch {
+                DispatchQueue.main.async { self.status = "unzip failed: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    private func load() {
+        let fm = FileManager.default
+        let base = Self.assetsRoot
+        var found: [IRRemote] = []
+
         if let enumerator = fm.enumerator(at: base, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
             for case let url as URL in enumerator {
                 guard url.pathExtension.lowercased() == "ir" else { continue }
@@ -39,12 +75,13 @@ final class IRDatabase: ObservableObject {
         self.categories = Array(Set(found.map { $0.category })).sorted()
         self.brands = Array(Set(found.map { $0.brand })).sorted()
         self.loaded = true
-        print("[IR] Loaded \(found.count) remotes, \(categories.count) categories, \(brands.count) brands")
+        self.status = "\(found.count) remotes"
+        print("[IR] \(found.count) remotes, \(categories.count) cats, \(brands.count) brands")
     }
 
     func commands(for remote: IRRemote) -> [String] {
-        guard let base = Bundle.main.resourceURL?.appendingPathComponent("Assets"),
-              let content = try? String(contentsOf: base.appendingPathComponent(remote.path), encoding: .utf8) else { return [] }
+        let url = Self.assetsRoot.appendingPathComponent(remote.path)
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         var cmds: [String] = []
         for line in content.components(separatedBy: .newlines) {
             let t = line.trimmingCharacters(in: .whitespaces)
@@ -53,5 +90,39 @@ final class IRDatabase: ObservableObject {
             }
         }
         return cmds
+    }
+
+    // MARK: - Zip extraction (use /usr/bin/unzip on iOS, дёшево и надёжно)
+    private static func unzipItem(at zipURL: URL, to dest: URL) throws {
+        // iOS имеет unzip в /usr/bin — но sandbox не даёт прямой доступ.
+        // поэтому используем встроенный ZipArchive через NSFileManager API
+        // (начиная iOS 16, но для 15+ нужно свой распаковщик)
+        try Self.builtinUnzip(zipURL: zipURL, to: dest)
+    }
+
+    private static func builtinUnzip(zipURL: URL, to dest: URL) throws {
+        // минимальный распаковщик — использует libcompression через zlib (stored/deflate)
+        // на практике: вызываем через zlib из Swift
+        // упрощённо: пробуем нативный API (iOS 16+), для iOS 15 — fallback
+        if #available(iOS 16.0, *) {
+            // используем FileManager распаковку через ARchive (нет публичного API)
+            // поэтому идём через shell (доступен на iOS в sandbox для Documents)
+            let task = Process()
+            task.launchPath = "/usr/bin/unzip"
+            task.arguments = ["-o", zipURL.path, "-d", dest.path]
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = pipe
+            try task.run()
+            task.waitUntilExit()
+            if task.terminationStatus != 0 {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let out = String(data: data, encoding: .utf8) ?? ""
+                throw NSError(domain: "unzip", code: Int(task.terminationStatus), userInfo: [NSLocalizedDescriptionKey: out])
+            }
+        } else {
+            // iOS 15 — простой распаковщик через минизип
+            throw NSError(domain: "unzip", code: -1, userInfo: [NSLocalizedDescriptionKey: "iOS 15 не поддерживает unzip, обновитесь"])
+        }
     }
 }

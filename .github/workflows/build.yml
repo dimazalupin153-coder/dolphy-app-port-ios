@@ -11,9 +11,6 @@ jobs:
       run: |
         if [ -f DolphyCam/AppIcon.png ]; then
           sips -z 1024 1024 DolphyCam/AppIcon.png --out DolphyCam/AppIcon.png || true
-          sips -z 60 60 DolphyCam/AppIcon.png --out DolphyCam/AppIcon60.png || true
-          sips -z 120 120 DolphyCam/AppIcon.png --out DolphyCam/AppIcon120.png || true
-          sips -z 180 180 DolphyCam/AppIcon.png --out DolphyCam/AppIcon180.png || true
         fi
     - name: Generate Xcode project
       run: xcodegen generate
@@ -23,6 +20,13 @@ jobs:
         xcodebuild -project DolphyCam.xcodeproj -scheme DolphyCam \
           -sdk iphoneos -configuration Release \
           -derivedDataPath build CODE_SIGNING_ALLOWED=NO 2>&1 | tee build.log
+    - name: Show errors
+      if: failure()
+      run: |
+        echo "=== ERRORS ==="
+        grep -E "error:" build.log | head -30 || true
+        echo "=== LAST 50 LINES ==="
+        tail -50 build.log || true
     - name: Upload build log on failure
       if: failure()
       uses: actions/upload-artifact@v4

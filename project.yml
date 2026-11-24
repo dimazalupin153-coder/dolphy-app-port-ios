@@ -9,8 +9,10 @@ targets:
     platform: iOS
     sources:
       - path: DolphyCam
+        excludes:
+          - "Assets/**"
     resources:
-      - path: DolphyCam/Assets
+      - path: DolphyCam/Assets.zip
     settings:
       base:
         INFOPLIST_FILE: DolphyCam/Info.plist
